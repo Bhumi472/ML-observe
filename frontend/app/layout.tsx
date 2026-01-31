@@ -1,46 +1,32 @@
-import React from "react"
-import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
-import './globals.css'
+// frontend/app/layout.tsx - WITH AUTO THEME
+"use client"; // Add this line for client-side theme detection
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
-
-export const metadata: Metadata = {
-  title: 'ML Observability Platform',
-  description: 'AI-Driven ML Observability & Decision Intelligence Platform',
-  generator: 'v0.app',
-  icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
-  },
-}
+import { useEffect } from 'react';
+import type { ReactNode } from 'react';
+import './globals.css';
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: ReactNode;
 }>) {
+  useEffect(() => {
+    // Check system preference
+    const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const html = document.documentElement;
+    
+    if (isDarkMode) {
+      html.classList.add('dark');
+    } else {
+      html.classList.remove('dark');
+    }
+  }, []);
+
   return (
-    <html lang="en" className="dark">
-      <body className={`font-sans antialiased dark`}>
+    <html lang="en">
+      <body>
         {children}
-        <Analytics />
       </body>
     </html>
-  )
+  );
 }

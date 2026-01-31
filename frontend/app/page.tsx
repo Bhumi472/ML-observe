@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/sidebar';
 import { Dashboard } from '@/components/dashboard';
 import { ModelManagement } from '@/components/model-management';
@@ -11,34 +11,51 @@ import { ExplainabilityEngine } from '@/components/explainability-engine';
 import { BiasMonitoring } from '@/components/bias-monitoring';
 import { AlertSystem } from '@/components/alert-system';
 import { BusinessImpact } from '@/components/business-impact';
+import { useRouter } from 'next/navigation';
 
 export default function Home() {
   const [activeSection, setActiveSection] = useState('dashboard');
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        router.push('/login');
+      } else {
+        setIsLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
 
   const renderSection = () => {
     switch (activeSection) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'models':
-        return <ModelManagement />;
-      case 'data-quality':
-        return <DataQuality />;
-      case 'drift-detection':
-        return <DriftDetection />;
-      case 'concept-drift':
-        return <ConceptDrift />;
-      case 'explainability':
-        return <ExplainabilityEngine />;
-      case 'bias':
-        return <BiasMonitoring />;
-      case 'alerts':
-        return <AlertSystem />;
-      case 'business-impact':
-        return <BusinessImpact />;
-      default:
-        return <Dashboard />;
+      case 'dashboard': return <Dashboard />;
+      case 'models': return <ModelManagement />;
+      case 'data-quality': return <DataQuality />;
+      case 'drift-detection': return <DriftDetection />;
+      case 'concept-drift': return <ConceptDrift />;
+      case 'explainability': return <ExplainabilityEngine />;
+      case 'bias': return <BiasMonitoring />;
+      case 'alerts': return <AlertSystem />;
+      case 'business-impact': return <BusinessImpact />;
+      default: return <Dashboard />;
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
