@@ -29,6 +29,8 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       APP_URL: ${APP_URL:-http://localhost:3000}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-super-secret-key-change-this}
+    volumes:
+      - ./backend/uploads:/app/uploads  # ← ADD ONLY THIS LINE
     depends_on:
       - db
     # Add .env file support
