@@ -1,9 +1,9 @@
-FROM python:3.11-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# install system deps (Alpine uses apk)
-RUN apk add --no-cache gcc musl-dev postgresql-dev
+# install system deps
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 # install python deps
 COPY requirements.txt .
@@ -11,9 +11,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # copy app
 COPY app ./app
-
-# Create uploads directory for models API
-RUN mkdir -p /app/uploads
 
 EXPOSE 8000
 
