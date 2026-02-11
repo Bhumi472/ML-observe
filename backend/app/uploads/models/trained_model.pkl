@@ -1,0 +1,33 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+import joblib
+
+# 1. Load dataset
+df = pd.read_csv("data.csv")
+
+print("Dataset shape:", df.shape)
+print("Columns:", df.columns)
+
+# 2. Assume last column is the target
+X = df.iloc[:, :-1]  # features
+y = df.iloc[:, -1]   # target
+
+# 3. Train-test split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# 4. Train a simple model
+model = LogisticRegression(max_iter=1000)
+model.fit(X_train, y_train)
+
+# 5. Evaluate
+y_pred = model.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+print(f"Accuracy: {acc:.2f}")
+
+# 6. Save the trained model properly
+joblib.dump(model, "trained_model.pkl")
+print("Model saved as 'trained_model.pkl'")

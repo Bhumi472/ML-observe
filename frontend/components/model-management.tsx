@@ -1,136 +1,286 @@
 'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Upload, Trash2, Eye, GitBranch, Calendar, BarChart3 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
-const models = [
-  {
-    id: 1,
-    name: 'Revenue Prediction v3.2',
-    framework: 'XGBoost',
-    accuracy: 94.2,
-    versions: 12,
-    lastUpdated: '2 days ago',
-    status: 'active',
-  },
-  {
-    id: 2,
-    name: 'Churn Detection v2.1',
-    framework: 'LightGBM',
-    accuracy: 91.8,
-    versions: 8,
-    lastUpdated: '1 week ago',
-    status: 'active',
-  },
-  {
-    id: 3,
-    name: 'Customer Segmentation v1.5',
-    framework: 'scikit-learn',
-    accuracy: 87.3,
-    versions: 5,
-    lastUpdated: '3 weeks ago',
-    status: 'inactive',
-  },
-  {
-    id: 4,
-    name: 'Recommendation Engine v2.0',
-    framework: 'TensorFlow',
-    accuracy: 89.5,
-    versions: 15,
-    lastUpdated: '5 days ago',
-    status: 'active',
-  },
-];
+interface UploadedFile {
+  id: number;
+  filename: string;
+  uploaded_at: string;
+}
 
 export function ModelManagement() {
-  return (
-    <div className="p-8 space-y-8">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-4xl font-bold text-foreground">Model Management</h1>
-          <p className="text-muted-foreground mt-2">Manage and monitor your ML models</p>
-        </div>
-        <Button className="bg-primary hover:bg-primary/90 text-primary-foreground gap-2">
-          <Upload className="w-4 h-4" />
-          Upload Model
-        </Button>
-      </div>
+  const router = useRouter();
+  const [model, setModel] = useState<File | null>(null);
+  const [dataset, setDataset] = useState<File | null>(null);
+  const [status, setStatus] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  const [models, setModels] = useState<UploadedFile[]>([]);
+  const [datasets, setDatasets] = useState<UploadedFile[]>([]);
 
-      {/* Models Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {models.map((model) => (
-          <Card key={model.id} className="bg-card border-border hover:border-primary/50 transition-colors">
-            <CardHeader>
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <CardTitle className="text-xl">{model.name}</CardTitle>
-                  <CardDescription className="mt-1">{model.framework}</CardDescription>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                  model.status === 'active'
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-gray-500/20 text-gray-400'
-                }`}>
-                  {model.status}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Metrics */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-background rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground">Accuracy</p>
-                  <p className="text-lg font-bold text-primary mt-1">{model.accuracy}%</p>
-                </div>
-                <div className="bg-background rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <GitBranch className="w-3 h-3" /> Versions
-                  </p>
-                  <p className="text-lg font-bold text-accent mt-1">{model.versions}</p>
-                </div>
-                <div className="bg-background rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Calendar className="w-3 h-3" /> Updated
-                  </p>
-                  <p className="text-xs font-bold text-foreground mt-2">{model.lastUpdated}</p>
-                </div>
-              </div>
+  // Check authentication on mount
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      setIsAuthenticated(false);
+      setError('Please login first');
+    } else {
+      setIsAuthenticated(true);
+      setError('');
+      fetchUploads();
+    }
+  }, []);
 
-              {/* Actions */}
-              <div className="flex gap-2 pt-2">
-                <Button variant="outline" className="flex-1 gap-2 bg-transparent" size="sm">
-                  <Eye className="w-4 h-4" />
-                  Monitor
-                </Button>
-                <Button variant="outline" className="flex-1 gap-2 bg-transparent" size="sm">
-                  <BarChart3 className="w-4 h-4" />
-                  Compare
-                </Button>
-                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive bg-transparent">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+  // Get token from localStorage
+  const getToken = () => {
+    return localStorage.getItem('access_token');
+  };
 
-      {/* Upload Section */}
-      <Card className="bg-gradient-to-br from-primary/10 to-accent/10 border-dashed border-2 border-primary/30">
-        <CardContent className="pt-12 pb-12 flex flex-col items-center justify-center">
-          <Upload className="w-12 h-12 text-primary mb-4" />
-          <h3 className="text-xl font-bold text-foreground mb-2">Upload a New Model</h3>
-          <p className="text-muted-foreground text-center mb-6 max-w-md">
-            Drag and drop your model file or click to browse. Supported formats: pickle, joblib, h5, onnx, pt
-          </p>
-          <Button className="gap-2">
-            <Upload className="w-4 h-4" />
-            Choose File
+  // Fetch uploaded models and datasets
+  const fetchUploads = async () => {
+    const token = getToken();
+    if (!token) {
+      setError('Please login first');
+      return;
+    }
+
+    try {
+      const [modelsRes, datasetsRes] = await Promise.all([
+        fetch('http://localhost:8000/upload/models', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch('http://localhost:8000/upload/datasets', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
+
+      if (modelsRes.status === 401 || datasetsRes.status === 401) {
+        setError('Session expired. Please login again.');
+        setIsAuthenticated(false);
+        localStorage.removeItem('access_token');
+        router.push('/login');
+        return;
+      }
+
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        setModels(modelsData.models || []);
+      }
+
+      if (datasetsRes.ok) {
+        const datasetsData = await datasetsRes.json();
+        setDatasets(datasetsData.datasets || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch uploads:', err);
+      setError('Failed to fetch uploaded files');
+    }
+  };
+
+  const uploadFile = async (file: File, type: 'model' | 'dataset') => {
+    const token = getToken();
+    
+    if (!token) {
+      setError('Please login first');
+      setIsAuthenticated(false);
+      router.push('/login');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setStatus('');
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const res = await fetch(`http://localhost:8000/upload/${type}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: form
+      });
+
+      const data = await res.json();
+
+      if (res.status === 401) {
+        setError('Session expired. Please login again.');
+        setIsAuthenticated(false);
+        localStorage.removeItem('access_token');
+        router.push('/login');
+        return;
+      }
+
+      if (!res.ok) {
+        setError(data.error || 'Upload failed');
+        return;
+      }
+
+      setStatus(`${type} uploaded: ${data.filename}`);
+      
+      // Clear file input
+      if (type === 'model') setModel(null);
+      if (type === 'dataset') setDataset(null);
+      
+      // Refresh lists
+      await fetchUploads();
+      
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Show login prompt if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <Alert variant="destructive">
+          <AlertDescription>
+            Please login first to upload models and datasets.
+          </AlertDescription>
+        </Alert>
+        <div className="mt-4">
+          <Button onClick={() => router.push('/login')}>
+            Go to Login
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 grid gap-6 max-w-4xl mx-auto">
+      
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {status && (
+        <Alert>
+          <AlertDescription className="text-green-600">{status}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-6">
+        {/* Upload Model */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Model</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <input 
+              type="file" 
+              accept=".pkl,.h5,.pt,.pth,.joblib" 
+              onChange={e => setModel(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-md file:border-0
+                file:text-sm file:font-semibold
+                file:bg-blue-50 file:text-blue-700
+                hover:file:bg-blue-100"
+            />
+            <Button 
+              onClick={() => model && uploadFile(model, 'model')}
+              disabled={!model || loading}
+              className="w-full"
+            >
+              {loading ? 'Uploading...' : 'Upload Model'}
+            </Button>
+            <p className="text-xs text-gray-500">
+              Supported: .pkl, .h5, .pt, .pth, .joblib
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Upload Dataset */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Upload Dataset</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <input 
+              type="file" 
+              accept=".csv,.json,.parquet" 
+              onChange={e => setDataset(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-md file:border-0
+                file:text-sm file:font-semibold
+                file:bg-green-50 file:text-green-700
+                hover:file:bg-green-100"
+            />
+            <Button 
+              onClick={() => dataset && uploadFile(dataset, 'dataset')}
+              disabled={!dataset || loading}
+              className="w-full"
+            >
+              {loading ? 'Uploading...' : 'Upload Dataset'}
+            </Button>
+            <p className="text-xs text-gray-500">
+              Supported: .csv, .json, .parquet
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Uploaded Models List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Uploaded Models ({models.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {models.length === 0 ? (
+            <p className="text-gray-500 text-sm">No models uploaded yet</p>
+          ) : (
+            <ul className="space-y-2">
+              {models.map(m => (
+                <li key={m.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="font-medium">{m.filename}</span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(m.uploaded_at).toLocaleDateString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
+
+      {/* Uploaded Datasets List */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Uploaded Datasets ({datasets.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {datasets.length === 0 ? (
+            <p className="text-gray-500 text-sm">No datasets uploaded yet</p>
+          ) : (
+            <ul className="space-y-2">
+              {datasets.map(d => (
+                <li key={d.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                  <span className="font-medium">{d.filename}</span>
+                  <span className="text-xs text-gray-500">
+                    {new Date(d.uploaded_at).toLocaleDateString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
     </div>
   );
 }

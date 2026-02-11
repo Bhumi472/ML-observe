@@ -20,7 +20,7 @@ export default function Home() {
 
   useEffect(() => {
     const checkAuth = () => {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       if (!token) {
         router.push('/login');
       } else {

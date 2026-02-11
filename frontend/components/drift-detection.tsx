@@ -1,227 +1,359 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ScatterChart, Scatter } from 'recharts';
-import { AlertTriangle, TrendingDown } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { AlertCircle, CheckCircle2, TrendingUp, TrendingDown } from 'lucide-react';
 
-const psiData = [
-  { date: 'Day 1', value: 0.05, threshold: 0.25 },
-  { date: 'Day 2', value: 0.08, threshold: 0.25 },
-  { date: 'Day 3', value: 0.12, threshold: 0.25 },
-  { date: 'Day 4', value: 0.18, threshold: 0.25 },
-  { date: 'Day 5', value: 0.22, threshold: 0.25 },
-  { date: 'Day 6', value: 0.19, threshold: 0.25 },
-  { date: 'Day 7', value: 0.21, threshold: 0.25 },
-];
+interface Dataset {
+  id: number;
+  filename: string;
+  uploaded_at: string;
+}
 
-const ksTestData = [
-  { feature: 'feature_1', value: 0.08, threshold: 0.15 },
-  { feature: 'feature_2', value: 0.12, threshold: 0.15 },
-  { feature: 'feature_3', value: 0.04, threshold: 0.15 },
-  { feature: 'feature_4', value: 0.14, threshold: 0.15 },
-  { feature: 'feature_5', value: 0.06, threshold: 0.15 },
-];
+interface DriftResult {
+  feature_name: string;
+  drift_score: number;
+  drift_detected: boolean;
+  ks_statistic: number;
+  ks_p_value: number;
+  psi_score: number;
+  reference_stats: any;
+  current_stats: any;
+  mean_change_percent: number;
+}
 
-const wassertsteinData = [
-  { date: 'Day 1', distance: 0.15 },
-  { date: 'Day 2', distance: 0.18 },
-  { date: 'Day 3', distance: 0.22 },
-  { date: 'Day 4', distance: 0.25 },
-  { date: 'Day 5', distance: 0.23 },
-  { date: 'Day 6', distance: 0.26 },
-  { date: 'Day 7', distance: 0.24 },
-];
-
-const featureDriftData = [
-  {
-    id: 1,
-    feature: 'age',
-    mean: 42.3,
-    previousMean: 41.8,
-    variance: 125.4,
-    previousVariance: 118.9,
-    driftType: 'Mean Shift',
-    severity: 'low',
-  },
-  {
-    id: 2,
-    feature: 'income',
-    mean: 65000,
-    previousMean: 62000,
-    variance: 2500000,
-    previousVariance: 2400000,
-    driftType: 'Mean Shift',
-    severity: 'medium',
-  },
-  {
-    id: 3,
-    feature: 'credit_score',
-    mean: 680,
-    previousMean: 675,
-    variance: 4500,
-    previousVariance: 3800,
-    driftType: 'Variance Shift',
-    severity: 'medium',
-  },
-];
+interface DriftHistory {
+  [feature: string]: Array<{
+    drift_score: number;
+    timestamp: string;
+  }>;
+}
 
 export function DriftDetection() {
+  const router = useRouter();
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
+  const [referenceDataset, setReferenceDataset] = useState<string>('');
+  const [currentDataset, setCurrentDataset] = useState<string>('');
+  const [driftResults, setDriftResults] = useState<DriftResult[]>([]);
+  const [driftHistory, setDriftHistory] = useState<DriftHistory>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [analysisComplete, setAnalysisComplete] = useState(false);
+
+  const getToken = () => localStorage.getItem('access_token');
+
+  // Fetch datasets on mount
+  useEffect(() => {
+    fetchDatasets();
+    fetchDriftHistory();
+  }, []);
+
+  const fetchDatasets = async () => {
+    const token = getToken();
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:8000/upload/datasets', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setDatasets(data.datasets || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch datasets:', err);
+    }
+  };
+
+  const fetchDriftHistory = async () => {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+      const res = await fetch('http://localhost:8000/drift/history?days=7', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setDriftHistory(data.history || {});
+      }
+    } catch (err) {
+      console.error('Failed to fetch drift history:', err);
+    }
+  };
+
+  const analyzeDrift = async () => {
+    if (!referenceDataset || !currentDataset) {
+      setError('Please select both reference and current datasets');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setAnalysisComplete(false);
+
+    const token = getToken();
+
+    try {
+      const res = await fetch('http://localhost:8000/drift/analyze', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          reference_dataset_id: parseInt(referenceDataset),
+          current_dataset_id: parseInt(currentDataset)
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Drift analysis failed');
+        return;
+      }
+
+      setDriftResults(data.drift_results || []);
+      setAnalysisComplete(true);
+      fetchDriftHistory(); // Refresh history
+
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getDriftStatus = (score: number) => {
+    if (score > 0.2) return { text: 'High', color: 'text-red-500', bg: 'bg-red-500/10' };
+    if (score > 0.1) return { text: 'Medium', color: 'text-yellow-500', bg: 'bg-yellow-500/10' };
+    return { text: 'Low', color: 'text-green-500', bg: 'bg-green-500/10' };
+  };
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-4xl font-bold text-foreground">Data Drift Detection</h1>
-        <p className="text-muted-foreground mt-2">Monitor input distribution changes using statistical tests</p>
+        <h1 className="text-4xl font-bold">Data Drift Detection</h1>
+        <p className="text-muted-foreground mt-2">Analyze statistical drift between datasets</p>
       </div>
 
-      {/* Key Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">PSI (Population Stability Index)</p>
-            <p className="text-2xl font-bold text-primary mt-2">0.21</p>
-            <p className="text-xs text-yellow-400 mt-2 flex items-center gap-1">
-              <TrendingDown className="w-3 h-3" /> Approaching threshold
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">KS Test (Max Statistic)</p>
-            <p className="text-2xl font-bold text-primary mt-2">0.14</p>
-            <p className="text-xs text-green-400 mt-2">Below threshold</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Wasserstein Distance</p>
-            <p className="text-2xl font-bold text-primary mt-2">0.24</p>
-            <p className="text-xs text-yellow-400 mt-2">High variation</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-card border-border">
-          <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Features with Drift</p>
-            <p className="text-2xl font-bold text-accent mt-2">3</p>
-            <p className="text-xs text-muted-foreground mt-2">Out of 45</p>
-          </CardContent>
-        </Card>
-      </div>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* PSI Trend */}
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle>Population Stability Index (PSI)</CardTitle>
-            <CardDescription>PSI measures distribution shift over time</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={psiData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" />
-                <YAxis stroke="rgba(255,255,255,0.5)" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #6366f1' }}
-                  labelStyle={{ color: '#fff' }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} name="PSI" />
-                <Line type="monotone" dataKey="threshold" stroke="#ec4899" strokeWidth={2} strokeDasharray="5 5" name="Threshold" />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* KS Test by Feature */}
-        <Card className="bg-card border-border">
-          <CardHeader>
-            <CardTitle>Kolmogorov-Smirnov Test</CardTitle>
-            <CardDescription>Statistical drift test by feature</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={ksTestData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                <XAxis dataKey="feature" stroke="rgba(255,255,255,0.5)" />
-                <YAxis stroke="rgba(255,255,255,0.5)" />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #6366f1' }}
-                  labelStyle={{ color: '#fff' }}
-                />
-                <Legend />
-                <Bar dataKey="value" fill="#6366f1" name="KS Statistic" />
-                <Bar dataKey="threshold" fill="#ec4899" name="Threshold" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Wasserstein Distance */}
-      <Card className="bg-card border-border">
+      {/* Dataset Selection */}
+      <Card>
         <CardHeader>
-          <CardTitle>Wasserstein Distance (Earth Mover)</CardTitle>
-          <CardDescription>Measures optimal transport cost between distributions</CardDescription>
+          <CardTitle>Select Datasets for Drift Analysis</CardTitle>
+          <CardDescription>Choose a reference (baseline) dataset and a current dataset to compare</CardDescription>
         </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={wassertsteinData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-              <XAxis dataKey="date" stroke="rgba(255,255,255,0.5)" />
-              <YAxis stroke="rgba(255,255,255,0.5)" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #6366f1' }}
-                labelStyle={{ color: '#fff' }}
-              />
-              <Line type="monotone" dataKey="distance" stroke="#a78bfa" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
+        <CardContent className="space-y-4">
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Reference Dataset (Baseline)</label>
+              <Select value={referenceDataset} onValueChange={setReferenceDataset}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select reference dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.map(dataset => (
+                    <SelectItem key={dataset.id} value={dataset.id.toString()}>
+                      {dataset.filename}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">Current Dataset</label>
+              <Select value={currentDataset} onValueChange={setCurrentDataset}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select current dataset" />
+                </SelectTrigger>
+                <SelectContent>
+                  {datasets.map(dataset => (
+                    <SelectItem key={dataset.id} value={dataset.id.toString()}>
+                      {dataset.filename}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button 
+            onClick={analyzeDrift} 
+            disabled={loading || !referenceDataset || !currentDataset}
+            className="w-full"
+          >
+            {loading ? 'Analyzing...' : 'Analyze Drift'}
+          </Button>
         </CardContent>
       </Card>
 
-      {/* Feature Drift Details */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <CardTitle>Feature Drift Analysis</CardTitle>
-          <CardDescription>Detailed drift information for each feature</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {featureDriftData.map((drift) => (
-              <div
-                key={drift.id}
-                className="p-4 rounded-lg border border-border bg-background hover:border-primary/50 transition-colors"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h4 className="font-bold text-foreground">{drift.feature}</h4>
-                    <p className="text-xs text-muted-foreground mt-1">{drift.driftType}</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Current Mean</p>
-                      <p className="font-mono text-foreground">{drift.mean}</p>
+      {/* Drift Results */}
+      {analysisComplete && driftResults.length > 0 && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Total Features</p>
+                <p className="text-3xl font-bold mt-2">{driftResults.length}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Features with Drift</p>
+                <p className="text-3xl font-bold mt-2 text-red-500">
+                  {driftResults.filter(r => r.drift_detected).length}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <p className="text-sm text-muted-foreground">Avg Drift Score</p>
+                <p className="text-3xl font-bold mt-2">
+                  {(driftResults.reduce((sum, r) => sum + r.drift_score, 0) / driftResults.length).toFixed(3)}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Drift Chart */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Drift Scores by Feature</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={driftResults}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="feature_name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="drift_score" fill="#6366f1" />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Detailed Results */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Detailed Drift Analysis</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {driftResults.map((result, idx) => {
+                  const status = getDriftStatus(result.drift_score);
+                  return (
+                    <div key={idx} className={`p-4 rounded-lg border ${status.bg}`}>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-lg">{result.feature_name}</h3>
+                            {result.drift_detected ? (
+                              <AlertCircle className="w-5 h-5 text-red-500" />
+                            ) : (
+                              <CheckCircle2 className="w-5 h-5 text-green-500" />
+                            )}
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
+                            <div>
+                              <p className="text-muted-foreground">Drift Score (PSI)</p>
+                              <p className="font-semibold">{result.psi_score?.toFixed(4)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">KS Statistic</p>
+                              <p className="font-semibold">{result.ks_statistic?.toFixed(4)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">P-Value</p>
+                              <p className="font-semibold">{result.ks_p_value?.toFixed(4)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground">Mean Change</p>
+                              <div className="flex items-center gap-1">
+                                {result.mean_change_percent > 0 ? (
+                                  <TrendingUp className="w-4 h-4 text-red-500" />
+                                ) : (
+                                  <TrendingDown className="w-4 h-4 text-green-500" />
+                                )}
+                                <p className="font-semibold">{result.mean_change_percent.toFixed(2)}%</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-4 mt-3 text-sm">
+                            <div>
+                              <p className="text-muted-foreground mb-1">Reference Stats</p>
+                              <p>Mean: {result.reference_stats.mean.toFixed(2)}</p>
+                              <p>Std: {result.reference_stats.std.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className="text-muted-foreground mb-1">Current Stats</p>
+                              <p>Mean: {result.current_stats.mean.toFixed(2)}</p>
+                              <p>Std: {result.current_stats.std.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className={`px-3 py-1 rounded text-xs font-medium ${status.bg} ${status.color}`}>
+                          {status.text}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Previous Mean</p>
-                      <p className="font-mono text-foreground">{drift.previousMean}</p>
-                    </div>
-                  </div>
-                </div>
-                <div className={`mt-3 inline-block px-3 py-1 rounded text-xs font-medium ${
-                  drift.severity === 'low'
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-yellow-500/20 text-yellow-400'
-                }`}>
-                  {drift.severity} severity
-                </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* Drift History */}
+      {Object.keys(driftHistory).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Drift History (Last 7 Days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {Object.entries(driftHistory).slice(0, 5).map(([feature, history]) => (
+              <div key={feature} className="mb-6">
+                <h4 className="font-semibold mb-2">{feature}</h4>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={history}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="timestamp" tickFormatter={(val) => new Date(val).toLocaleDateString()} />
+                    <YAxis />
+                    <Tooltip labelFormatter={(val) => new Date(val).toLocaleString()} />
+                    <Line type="monotone" dataKey="drift_score" stroke="#6366f1" />
+                  </LineChart>
+                </ResponsiveContainer>
               </div>
             ))}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

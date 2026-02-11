@@ -50,7 +50,7 @@ def send_verification_email(email, token):
         return False
 
 # ======================
-# REGISTER with Email Verification - FIXED VERSION
+# REGISTER with Email Verification
 # ======================
 @auth_bp.route("/register", methods=["POST"])
 def register():
@@ -61,6 +61,9 @@ def register():
     if not email or not password:
         return jsonify({"error": "Email & password required"}), 400
 
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
     hashed_password = generate_password_hash(password)
     verification_token = secrets.token_urlsafe(32)
 
@@ -70,13 +73,14 @@ def register():
     try:
         # Insert user into database
         cur.execute(
-            "INSERT INTO users (email, password, verification_token) VALUES (%s, %s, %s)",
+            "INSERT INTO users (email, password, verification_token) VALUES (%s, %s, %s) RETURNING id",
             (email, hashed_password, verification_token)
         )
+        user_id = cur.fetchone()[0]
         
         # ALWAYS COMMIT the user insert first
         conn.commit()
-        print(f"✅ User '{email}' created in database")
+        print(f"✅ User '{email}' created with ID {user_id}")
         
         # Try to send verification email (but don't rollback if it fails)
         email_sent = send_verification_email(email, verification_token)
@@ -85,14 +89,14 @@ def register():
             return jsonify({
                 "success": True,
                 "message": "User registered successfully. Please check your email to verify your account."
-            })
+            }), 201
         else:
-            # User is saved, just email failed - return success but with warning
+            # User is saved, just email failed
             return jsonify({
                 "success": True,
                 "message": "Registration successful! Please login to continue.",
                 "warning": "verification_email_failed"
-            })
+            }), 201
             
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
@@ -128,43 +132,49 @@ def verify_email():
     
     try:
         cur.execute(
-            "SELECT id FROM users WHERE verification_token = %s",
+            "SELECT id, email_verified FROM users WHERE verification_token = %s",
             (token,)
         )
         user = cur.fetchone()
         
-        if user:
-            cur.execute(
-                "UPDATE users SET email_verified = TRUE, verification_token = NULL WHERE id = %s",
-                (user[0],)
-            )
-            conn.commit()
-            cur.close()
-            conn.close()
-            return jsonify({
-                "success": True,
-                "message": "Email verified successfully! You can now login."
-            })
-        else:
-            cur.close()
-            conn.close()
+        if not user:
             return jsonify({
                 "success": False,
                 "error": "Invalid or expired verification token."
             }), 400
+        
+        user_id, already_verified = user
+        
+        if already_verified:
+            return jsonify({
+                "success": True,
+                "message": "Email already verified. You can login now."
+            })
+        
+        cur.execute(
+            "UPDATE users SET email_verified = TRUE, verification_token = NULL WHERE id = %s",
+            (user_id,)
+        )
+        conn.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Email verified successfully! You can now login."
+        })
             
     except Exception as e:
         conn.rollback()
         print(f"Verification error: {e}")
-        cur.close()
-        conn.close()
         return jsonify({
             "success": False,
             "error": "Email verification failed."
         }), 500
+    finally:
+        cur.close()
+        conn.close()
 
 # ======================
-# LOGIN (Updated to check email verification)
+# LOGIN
 # ======================
 @auth_bp.route("/login", methods=["POST"])
 def login():
@@ -188,46 +198,49 @@ def login():
         )
         user = cur.fetchone()
         
-        if user:
-            user_id, hashed_password, email_verified = user
-            
-            if check_password_hash(hashed_password, password):
-                # Allow login even if email not verified for now
-                # You can enable this check later when email is working
-                # if not email_verified:
-                #     return jsonify({
-                #         "success": False,
-                #         "error": "Please verify your email before logging in.",
-                #         "needs_verification": True
-                #     }), 403
-                
-                token = create_access_token(identity=str(user_id))
-                cur.close()
-                conn.close()
-                return jsonify({
-                    "success": True,
-                    "access_token": token,
-                    "email_verified": email_verified
-                })
+        if not user:
+            return jsonify({
+                "success": False,
+                "error": "Invalid email or password."
+            }), 401
         
-        cur.close()
-        conn.close()
+        user_id, hashed_password, email_verified = user
+        
+        if not check_password_hash(hashed_password, password):
+            return jsonify({
+                "success": False,
+                "error": "Invalid email or password."
+            }), 401
+        
+        # Optional: Uncomment to enforce email verification
+        # if not email_verified:
+        #     return jsonify({
+        #         "success": False,
+        #         "error": "Please verify your email before logging in.",
+        #         "needs_verification": True
+        #     }), 403
+        
+        token = create_access_token(identity=str(user_id))
+        
         return jsonify({
-            "success": False,
-            "error": "Invalid email or password."
-        }), 401
+            "success": True,
+            "access_token": token,
+            "email_verified": email_verified,
+            "user_id": user_id
+        })
         
     except Exception as e:
-        cur.close()
-        conn.close()
         print(f"Login error: {e}")
         return jsonify({
             "success": False,
             "error": "Login failed due to server error."
         }), 500
+    finally:
+        cur.close()
+        conn.close()
 
 # ======================
-# RESEND VERIFICATION EMAIL - FIXED VERSION
+# RESEND VERIFICATION EMAIL
 # ======================
 @auth_bp.route("/resend-verification", methods=["POST"])
 def resend_verification():
@@ -248,8 +261,6 @@ def resend_verification():
         user = cur.fetchone()
         
         if not user:
-            cur.close()
-            conn.close()
             return jsonify({
                 "success": False,
                 "error": "User not found."
@@ -258,8 +269,6 @@ def resend_verification():
         user_id, email_verified = user
         
         if email_verified:
-            cur.close()
-            conn.close()
             return jsonify({
                 "success": True,
                 "message": "Email already verified."
@@ -279,9 +288,6 @@ def resend_verification():
         # Try to send email
         email_sent = send_verification_email(email, new_token)
         
-        cur.close()
-        conn.close()
-        
         if email_sent:
             return jsonify({
                 "success": True,
@@ -296,13 +302,14 @@ def resend_verification():
             
     except Exception as e:
         conn.rollback()
-        cur.close()
-        conn.close()
         print(f"Resend verification error: {e}")
         return jsonify({
             "success": False,
             "error": "Failed to resend verification email."
         }), 500
+    finally:
+        cur.close()
+        conn.close()
 
 # ======================
 # CHECK AUTH STATUS

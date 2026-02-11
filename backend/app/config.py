@@ -5,8 +5,8 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL")
     
     # JWT Configuration
-    SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key")
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "jwt-secret-key")
+    SECRET_KEY = os.getenv("SECRET_KEY", "super-secret-key-change-in-production")
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "jwt-secret-key-change-in-production")
     
     # Email Verification Configuration
     SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
